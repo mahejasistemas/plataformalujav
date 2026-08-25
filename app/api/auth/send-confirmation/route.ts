@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
-import { renderToStaticMarkup } from "react-dom/server";
-import * as React from "react";
 import { createSignedToken, buildVerificationUrl } from "@/lib/auth-tokens";
-import { ConfirmationEmail } from "@/emails/ConfirmationEmail";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +12,96 @@ export type SendConfirmationRequest = {
 
 function isEmail(v: unknown): v is string {
   return typeof v === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function confirmationEmailHtml(params: {
+  userName: string;
+  verificationUrl: string;
+  expiresMinutes: number;
+  brandName?: string;
+  supportEmail?: string;
+}): string {
+  const {
+    userName,
+    verificationUrl,
+    expiresMinutes,
+    brandName = "Plataforma Lujav",
+    supportEmail = "soporte@transporteslujav.com",
+  } = params;
+
+  const u = escapeHtml;
+  const year = new Date().getFullYear();
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Confirma tu correo - ${u(brandName)}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111827;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f9fafb;">
+    <tbody>
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;">
+            <tbody>
+              <tr>
+                <td style="background:linear-gradient(135deg,#dc2626 0%,#b91c1c 100%);border-top-left-radius:12px;border-top-right-radius:12px;padding:28px 32px;color:#fff;">
+                  <div style="font-size:18px;font-weight:700;letter-spacing:0.2px;">${u(brandName)}</div>
+                </td>
+              </tr>
+              <tr>
+                <td style="background-color:#ffffff;padding:32px;border-left:1px solid #f3f4f6;border-right:1px solid #f3f4f6;">
+                  <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#111827;">Bienvenido, ${u(userName)}!</h1>
+                  <p style="margin:0 0 20px;font-size:15px;line-height:1.5;color:#4b5563;">
+                    Gracias por registrarte. Haz clic en el bot&oacute;n de abajo para confirmar tu direcci&oacute;n de correo y activar tu cuenta.
+                  </p>
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 24px;">
+                    <tbody>
+                      <tr>
+                        <td style="border-radius:10px;background:#b91c1c;">
+                          <a href="${u(verificationUrl)}"
+                             style="display:inline-block;padding:14px 24px;color:#fff;font-weight:600;font-size:15px;text-decoration:none;border-radius:10px;"
+                             target="_blank" rel="noopener noreferrer">
+                            Confirmar mi correo
+                          </a>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <p style="margin:0 0 12px;font-size:14px;line-height:1.5;color:#6b7280;word-break:break-all;">
+                    O copia y pega este enlace en tu navegador:<br />
+                    <a href="${u(verificationUrl)}" style="color:#b91c1c;text-decoration:underline;">${u(verificationUrl)}</a>
+                  </p>
+                  <p style="margin:0;font-size:13px;color:#9ca3af;line-height:1.5;">
+                    Este enlace expira en ${Number.isFinite(expiresMinutes) ? expiresMinutes : 60} minutos. Si no solicitaste esta acci&oacute;n, puedes ignorar este correo.
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="background-color:#ffffff;padding:0 32px 28px;border-left:1px solid #f3f4f6;border-right:1px solid #f3f4f6;border-bottom:1px solid #f3f4f6;border-bottom-left-radius:12px;border-bottom-right-radius:12px;font-size:12px;color:#9ca3af;line-height:1.5;">
+                  <div style="margin-bottom:4px;">&copy; ${year} ${u(brandName)}. Todos los derechos reservados.</div>
+                  <div>Contacto: <a href="mailto:${u(supportEmail)}" style="color:#b91c1c;text-decoration:none;">${u(supportEmail)}</a></div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</body>
+</html>`;
 }
 
 export async function POST(req: Request) {
@@ -60,21 +147,20 @@ export async function POST(req: Request) {
       ttl
     );
     const verificationUrl = buildVerificationUrl(token);
+    const html = confirmationEmailHtml({
+      userName: name,
+      verificationUrl,
+      expiresMinutes: ttl,
+    });
 
     const resend = new Resend(apiKey);
 
     try {
-      const emailNode = ConfirmationEmail({
-        userName: name,
-        verificationUrl,
-        expiresMinutes: ttl,
-      }) as React.ReactElement;
-      const html = renderToStaticMarkup(emailNode);
       await resend.emails.send({
         from: `${fromName} <${fromEmail}>`,
         to: [email],
         subject: "Confirma tu correo - Plataforma Lujav",
-        html: "<!DOCTYPE html>" + html,
+        html,
       });
     } catch (err) {
       console.error("[resend] send error:", err);

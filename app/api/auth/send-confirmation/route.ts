@@ -35,7 +35,7 @@ function confirmationEmailHtml(params: {
     verificationUrl,
     expiresMinutes,
     brandName = "Plataforma Lujav",
-    supportEmail = "soporte@transporteslujav.com",
+    supportEmail = process.env.RESEND_SUPPORT_EMAIL || "support@plataformalujav.space",
   } = params;
 
   const u = escapeHtml;
@@ -139,7 +139,9 @@ export async function POST(req: Request) {
     }
 
     const fromEmail = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
-    const fromName = process.env.RESEND_FROM_NAME || "Plataforma Lujav";
+    const fromName = process.env.RESEND_FROM_NAME || "Soporte Plataforma Lujav";
+    const replyTo = process.env.RESEND_REPLY_TO || process.env.RESEND_FROM_EMAIL || fromEmail;
+    const resolvedSupportEmail = process.env.RESEND_SUPPORT_EMAIL || "support@plataformalujav.space";
     const ttl = Number(process.env.AUTH_TOKEN_TTL_MINUTES ?? 60);
 
     const token = createSignedToken(
@@ -151,6 +153,7 @@ export async function POST(req: Request) {
       userName: name,
       verificationUrl,
       expiresMinutes: ttl,
+      supportEmail: resolvedSupportEmail,
     });
 
     const resend = new Resend(apiKey);
@@ -158,6 +161,7 @@ export async function POST(req: Request) {
     try {
       await resend.emails.send({
         from: `${fromName} <${fromEmail}>`,
+        replyTo: replyTo,
         to: [email],
         subject: "Confirma tu correo - Plataforma Lujav",
         html,
@@ -177,7 +181,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       message:
-        "Correo de confirmación enviado. Revisa tu bandeja de entrada (y spam).",
+        "Correo de confirmación enviado. Revisa tu bandeja de entrada.",
     });
   } catch (err) {
     console.error("[send-confirmation] unexpected:", err);

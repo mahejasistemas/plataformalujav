@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifySignedToken } from "@/lib/auth-tokens";
+import { supabase } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,8 +37,29 @@ export async function POST(req: Request) {
       );
     }
 
-    // TODO: cuando se conecte la DB, actualizar aquí:
-    // UPDATE users SET email_verified=true, email_verified_at=NOW() WHERE email=payload.email AND deleted_at IS NULL;
+    try {
+      const isoNow = new Date().toISOString();
+      const { error: updErr } = await supabase
+        .from("users")
+        .update({
+          email_verified: true,
+          email_verified_at: isoNow,
+          updated_at: isoNow,
+        })
+        .eq("email", payload.email)
+        .is("deleted_at", null);
+
+      if (updErr) {
+        console.error("[verify] UPDATE users error:", updErr);
+        throw updErr;
+      }
+    } catch (err) {
+      console.error("[verify] UPDATE en Supabase falló:", err);
+      return NextResponse.json(
+        { ok: false, error: "Error al marcar correo como verificado." },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       ok: true,
